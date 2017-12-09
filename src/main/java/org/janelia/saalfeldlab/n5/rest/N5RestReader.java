@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2017, Stephan Saalfeld
+ * Copyright (c) 2017, Stephan Saalfeld, Philipp Hanslovsky
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -28,9 +28,12 @@ package org.janelia.saalfeldlab.n5.rest;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.Reader;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URL;
+import java.nio.channels.Channels;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.HashMap;
 
@@ -38,6 +41,8 @@ import org.janelia.saalfeldlab.n5.AbstractGsonReader;
 import org.janelia.saalfeldlab.n5.DataBlock;
 import org.janelia.saalfeldlab.n5.DatasetAttributes;
 import org.janelia.saalfeldlab.n5.DefaultBlockReader;
+import org.janelia.saalfeldlab.n5.GsonAttributesParser;
+import org.janelia.saalfeldlab.n5.N5Reader;
 
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
@@ -50,7 +55,7 @@ import com.google.gson.JsonElement;
  *
  * @author Philipp Hanslovsky
  */
-class N5RestReader extends AbstractGsonReader
+public class N5RestReader extends AbstractGsonReader
 {
 
 	private static final String jsonFile = "attributes.json";
@@ -73,6 +78,8 @@ class N5RestReader extends AbstractGsonReader
 	 *
 	 * @param url
 	 * @param gsonBuilder
+	 * @param connectionTimeout
+	 * @param readTimeout
 	 */
 	public N5RestReader( final String groupUrl, final GsonBuilder gsonBuilder, final int connectionTimeout, final int readTimeout )
 	{
@@ -81,6 +88,20 @@ class N5RestReader extends AbstractGsonReader
 		this.groupUrl = URI.create( groupUrl );
 		this.connectionTimeout = connectionTimeout;
 		this.readTimeout = readTimeout;
+	}
+
+	/**
+	 * Opens an {@link N5GoogleRestReader} with a custom {@link GsonBuilder} to
+	 * support custom attributes at a specified URL.
+	 *
+	 * @param url
+	 * @param connectionTimeout
+	 * @param readTimeout
+	 */
+	public N5RestReader( final String groupUrl, final int connectionTimeout, final int readTimeout )
+	{
+
+		this( groupUrl, new GsonBuilder(), connectionTimeout, readTimeout );
 	}
 
 	@Override
@@ -106,7 +127,9 @@ class N5RestReader extends AbstractGsonReader
 		final HttpURLConnection connection = getConnection( url.toURL() );
 		try (InputStream inputStream = connection.getInputStream())
 		{
-			return gson.fromJson( new InputStreamReader( inputStream ), HashMap.class );
+			try( Reader reader = new InputStreamReader( inputStream ) ) {
+				return GsonAttributesParser.readAttributes(reader, getGson());
+			}
 		}
 	}
 
@@ -153,7 +176,7 @@ class N5RestReader extends AbstractGsonReader
 			final long[] gridPosition )
 	{
 
-		return groupUrl.resolve( dataset ).resolve( String.join( delimiter, Arrays.stream( gridPosition ).mapToObj( Long::toString ).toArray( String[]::new ) ) );
+		return URI.create( groupUrl + "/" + dataset + "/" + String.join( delimiter, Arrays.stream( gridPosition ).mapToObj( Long::toString ).toArray( String[]::new ) ) );
 	}
 
 	/**
@@ -164,7 +187,7 @@ class N5RestReader extends AbstractGsonReader
 	 */
 	private URI getAttributesUrl( final String dataset )
 	{
-		return this.groupUrl.resolve( dataset ).resolve( jsonFile );
+		return URI.create( this.groupUrl + "/" + dataset + "/" + jsonFile );
 	}
 
 	private HttpURLConnection getConnection( final URL url ) throws IOException
